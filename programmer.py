@@ -14,6 +14,9 @@ from datetime import datetime
 # Import USB detection module
 from usb import USBDeviceDetector, scan_all_devices
 
+# Import flash module
+from flash import ESP32Flasher
+
 class FT232HMonitor:
     def __init__(self, root):
         self.root = root
@@ -22,14 +25,18 @@ class FT232HMonitor:
         self.root.resizable(False, False)
         self.center_window()
         
-        # Initialize USB detector
+        # Initialize USB detector and flasher
         self.usb_detector = USBDeviceDetector()
+        self.flasher = ESP32Flasher()
+        
+        # Configure root grid
+        root.columnconfigure(0, weight=1)
+        root.rowconfigure(0, weight=1)
+        root.rowconfigure(1, weight=0)  # For snackbar
         
         # Create main frame
         self.main_frame = ttk.Frame(root, padding="20")
         self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        root.columnconfigure(0, weight=1)
-        root.rowconfigure(0, weight=1)
         self.main_frame.columnconfigure(0, weight=1)
         self.main_frame.rowconfigure(1, weight=1)
         
@@ -79,12 +86,28 @@ class FT232HMonitor:
         self.print_button = ttk.Button(self.button_frame, text="Print", command=self.print_qr_code, width=15)
         self.print_button.grid(row=0, column=1, padx=(10, 0))
         
-        # Exit button
-        exit_button = ttk.Button(self.main_frame, text="Exit", command=self.root.quit)
-        exit_button.grid(row=2, column=0, pady=(20, 0))
         
         # Bind escape key
         self.root.bind('<Escape>', lambda e: self.root.quit())
+        
+        # Create snackbar frame (initially hidden)
+        self.snackbar_frame = ttk.Frame(root, relief="solid", borderwidth=1)
+        self.snackbar_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=20, pady=(0, 20))
+        self.snackbar_frame.grid_remove()  # Hidden by default
+        
+        # Snackbar content
+        self.snackbar_label = ttk.Label(self.snackbar_frame, text="", font=('Arial', 10), wraplength=500)
+        self.snackbar_label.grid(row=0, column=0, padx=10, pady=5, sticky=(tk.W, tk.E))
+        
+        # Snackbar close button
+        self.snackbar_close = ttk.Button(self.snackbar_frame, text="✕", width=3, command=self.hide_snackbar)
+        self.snackbar_close.grid(row=0, column=1, padx=(0, 5), pady=5)
+        
+        # Configure snackbar frame columns
+        self.snackbar_frame.columnconfigure(0, weight=1)
+        
+        # Snackbar auto-hide timer
+        self.snackbar_timer = None
         
         # Start monitoring thread
         self.running = True
@@ -162,25 +185,78 @@ class FT232HMonitor:
     def on_device_selected(self, event):
         """Handle device selection from dropdown"""
         selected_port = self.device_var.get()
-        print(f"Selected port: {selected_port}")
+        self.show_snackbar(f"Selected port: {selected_port}")
     
     def flash_device(self):
         """Flash the connected device"""
         selected_port = self.device_var.get()
         if selected_port:
-            print(f"Flashing device on port: {selected_port}")
-            # TODO: Implement actual flashing logic
+            self.show_snackbar(f"Flashing device on port: {selected_port}")
+            
+            # Disable flash button during flashing
+            self.flash_button.config(state="disabled", text="Flashing...")
+            self.root.update()
+            
+            try:
+                # Perform the flashing
+                success, message = self.flasher.flash_device(selected_port)
+                
+                if success:
+                    self.show_snackbar("✅ " + message, "success")
+                else:
+                    self.show_snackbar("❌ " + message, "error")
+                    
+            except Exception as e:
+                self.show_snackbar(f"❌ Error during flashing: {str(e)}", "error")
+            finally:
+                # Re-enable flash button
+                self.flash_button.config(state="normal", text="Flash")
         else:
-            print("No device selected for flashing")
+            self.show_snackbar("No device selected for flashing", "warning")
     
     def print_qr_code(self):
         """Print the device's QR code"""
         selected_port = self.device_var.get()
         if selected_port:
-            print(f"Printing QR code for device on port: {selected_port}")
+            self.show_snackbar(f"Printing QR code for device on port: {selected_port}")
             # TODO: Implement actual QR code printing logic
         else:
-            print("No device selected for printing")
+            self.show_snackbar("No device selected for printing", "warning")
+    
+    def show_snackbar(self, message, message_type="info"):
+        """Show a snackbar notification"""
+        # Cancel any existing timer
+        if self.snackbar_timer:
+            self.root.after_cancel(self.snackbar_timer)
+        
+        # Set message and color based on type
+        self.snackbar_label.config(text=message)
+        
+        if message_type == "success":
+            self.snackbar_frame.config(style="Success.TFrame")
+            self.snackbar_label.config(foreground="green")
+        elif message_type == "error":
+            self.snackbar_frame.config(style="Error.TFrame")
+            self.snackbar_label.config(foreground="red")
+        elif message_type == "warning":
+            self.snackbar_frame.config(style="Warning.TFrame")
+            self.snackbar_label.config(foreground="orange")
+        else:
+            self.snackbar_frame.config(style="TFrame")
+            self.snackbar_label.config(foreground="black")
+        
+        # Show the snackbar
+        self.snackbar_frame.grid()
+        
+        # Auto-hide after 5 seconds
+        self.snackbar_timer = self.root.after(5000, self.hide_snackbar)
+    
+    def hide_snackbar(self):
+        """Hide the snackbar notification"""
+        self.snackbar_frame.grid_remove()
+        if self.snackbar_timer:
+            self.root.after_cancel(self.snackbar_timer)
+            self.snackbar_timer = None
     
     def on_closing(self):
         """Handle window closing"""
@@ -196,9 +272,6 @@ def main():
         # Handle window closing
         root.protocol("WM_DELETE_WINDOW", app.on_closing)
         
-        print("FT232H Device Monitor started. Checking devices every second...")
-        print("Press ESC or click Exit to close.")
-        sys.stdout.flush()
         
         root.mainloop()
         
