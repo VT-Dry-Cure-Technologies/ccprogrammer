@@ -34,7 +34,7 @@ class FT232HMonitor:
         self.main_frame.rowconfigure(1, weight=1)
         
         # Create title
-        title_label = ttk.Label(self.main_frame, text="FT232H Device Monitor", font=('Arial', 24, 'bold'))
+        title_label = ttk.Label(self.main_frame, text="FT232H Device Monitor", font=('Arial', 20, 'bold'))
         title_label.grid(row=0, column=0, pady=(0, 20))
         
         # Create status frame
@@ -42,26 +42,42 @@ class FT232HMonitor:
         self.status_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.status_frame.columnconfigure(0, weight=1)
         
-        # Status display
-        self.status_label = ttk.Label(self.status_frame, text="Checking devices...", font=('Arial', 16))
+        # Device connection status
+        self.status_label = ttk.Label(self.status_frame, text="Device not connected", font=('Arial', 16))
         self.status_label.grid(row=0, column=0, pady=10)
         
-        # Dropdown for FT232H TTY ports
-        self.device_label = ttk.Label(self.status_frame, text="Select FT232H Port:", font=('Arial', 14))
-        self.device_label.grid(row=1, column=0, pady=(10, 0))
+        # Dropdown for FT232H TTY ports (only shown when connected)
         self.device_var = tk.StringVar()
-        self.device_dropdown = ttk.Combobox(self.status_frame, textvariable=self.device_var, state="readonly", font=('Arial', 14), width=30)
-        self.device_dropdown.grid(row=2, column=0, pady=(5, 10))
+        self.device_dropdown = ttk.Combobox(self.status_frame, textvariable=self.device_var, state="readonly", font=('Arial', 12), width=25)
+        self.device_dropdown.grid(row=1, column=0, pady=(10, 10))
         self.device_dropdown.bind("<<ComboboxSelected>>", self.on_device_selected)
+        self.device_dropdown.grid_remove()  # Hidden by default
         
-        # Selected port display
-        self.selected_port = None
-        self.selected_label = ttk.Label(self.status_frame, text="Selected port: None", font=('Arial', 12))
-        self.selected_label.grid(row=3, column=0, pady=(5, 10))
+        # ESP32 Device Info (only shown when connected)
+        self.device_info_frame = ttk.Frame(self.status_frame)
+        self.device_info_frame.grid(row=2, column=0, pady=(10, 10))
+        self.device_info_frame.grid_remove()  # Hidden by default
         
-        # Last update time
-        self.update_time_label = ttk.Label(self.status_frame, text="", font=('Arial', 10))
-        self.update_time_label.grid(row=4, column=0, pady=(10, 0))
+        # ESP32 Address
+        self.address_label = ttk.Label(self.device_info_frame, text="Address: E4B13797BACC", font=('Arial', 12))
+        self.address_label.grid(row=0, column=0, pady=(0, 5))
+        
+        # ESP32 Firmware Version
+        self.firmware_label = ttk.Label(self.device_info_frame, text="Firmware: 1.12", font=('Arial', 12))
+        self.firmware_label.grid(row=1, column=0, pady=(0, 10))
+        
+        # Action buttons (only shown when connected)
+        self.button_frame = ttk.Frame(self.status_frame)
+        self.button_frame.grid(row=3, column=0, pady=(10, 10))
+        self.button_frame.grid_remove()  # Hidden by default
+        
+        # Flash button
+        self.flash_button = ttk.Button(self.button_frame, text="Flash", command=self.flash_device, width=15)
+        self.flash_button.grid(row=0, column=0, padx=(0, 10))
+        
+        # Print button
+        self.print_button = ttk.Button(self.button_frame, text="Print", command=self.print_qr_code, width=15)
+        self.print_button.grid(row=0, column=1, padx=(10, 0))
         
         # Exit button
         exit_button = ttk.Button(self.main_frame, text="Exit", command=self.root.quit)
@@ -105,34 +121,36 @@ class FT232HMonitor:
     def update_display(self, ft232h_devices, tty_devices, error=None):
         """Update the display with device information"""
         if error:
-            status_text = f"❌ {error}"
-            self.status_label.config(text=status_text, foreground="red")
-            self.device_dropdown['values'] = []
-            self.device_var.set('')
+            self.status_label.config(text="Device not connected", foreground="red")
+            self.hide_connected_elements()
         elif ft232h_devices:
-            status_text = f"✅ FT232H Device Connected ({len(ft232h_devices)} found)"
-            self.status_label.config(text=status_text, foreground="green")
-            self.device_dropdown['values'] = tty_devices
-            if tty_devices:
-                if self.selected_port not in tty_devices:
-                    self.selected_port = tty_devices[0]
-                    self.device_var.set(self.selected_port)
-            else:
-                self.selected_port = None
-                self.device_var.set('')
+            self.status_label.config(text="Device connected", foreground="green")
+            self.show_connected_elements(tty_devices)
         else:
-            status_text = "❌ No FT232H Device Connected"
-            self.status_label.config(text=status_text, foreground="red")
-            self.device_dropdown['values'] = []
-            self.device_var.set('')
-            self.selected_port = None
+            self.status_label.config(text="Device not connected", foreground="red")
+            self.hide_connected_elements()
+    
+    def show_connected_elements(self, tty_devices):
+        """Show elements when device is connected"""
+        # Show dropdown
+        self.device_dropdown['values'] = tty_devices
+        if tty_devices:
+            if not self.device_var.get() or self.device_var.get() not in tty_devices:
+                self.device_var.set(tty_devices[0])
+        self.device_dropdown.grid()
         
-        # Update selected port display
-        self.selected_label.config(text=f"Selected port: {self.selected_port if self.selected_port else 'None'}")
+        # Show device info
+        self.device_info_frame.grid()
         
-        # Update timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.update_time_label.config(text=f"Last updated: {timestamp}")
+        # Show action buttons
+        self.button_frame.grid()
+    
+    def hide_connected_elements(self):
+        """Hide elements when device is not connected"""
+        self.device_dropdown.grid_remove()
+        self.device_info_frame.grid_remove()
+        self.button_frame.grid_remove()
+        self.device_var.set('')
     
     def monitor_devices(self):
         """Monitor devices every second in a separate thread"""
@@ -143,8 +161,26 @@ class FT232HMonitor:
     
     def on_device_selected(self, event):
         """Handle device selection from dropdown"""
-        self.selected_port = self.device_var.get()
-        self.selected_label.config(text=f"Selected port: {self.selected_port}")
+        selected_port = self.device_var.get()
+        print(f"Selected port: {selected_port}")
+    
+    def flash_device(self):
+        """Flash the connected device"""
+        selected_port = self.device_var.get()
+        if selected_port:
+            print(f"Flashing device on port: {selected_port}")
+            # TODO: Implement actual flashing logic
+        else:
+            print("No device selected for flashing")
+    
+    def print_qr_code(self):
+        """Print the device's QR code"""
+        selected_port = self.device_var.get()
+        if selected_port:
+            print(f"Printing QR code for device on port: {selected_port}")
+            # TODO: Implement actual QR code printing logic
+        else:
+            print("No device selected for printing")
     
     def on_closing(self):
         """Handle window closing"""
