@@ -10,7 +10,6 @@ import sys
 import threading
 import time
 from datetime import datetime
-import serial
 import re
 
 # Import USB detection module
@@ -20,17 +19,21 @@ from print_qr import print_qr_code
 # Import flash module
 from flash import ESP32Flasher
 
+# Import serial module
+from ccserial import SerialRecorder
+
 class FT232HMonitor:
     def __init__(self, root):
         self.root = root
-        self.root.title("FT232H Device Monitor")
+        self.root.title("CC2 Programmer")
         self.root.geometry("800x480")
         self.root.resizable(False, False)
         self.center_window()
         
-        # Initialize USB detector and flasher
+        # Initialize USB detector, flasher, and serial recorder
         self.usb_detector = USBDeviceDetector()
         self.flasher = ESP32Flasher()
+        self.serial_recorder = SerialRecorder(self.gui_callback)
         
         # Configure root grid
         root.columnconfigure(0, weight=1)
@@ -44,7 +47,7 @@ class FT232HMonitor:
         self.main_frame.rowconfigure(1, weight=1)
         
         # Create title
-        title_label = ttk.Label(self.main_frame, text="FT232H Device Monitor", font=('Arial', 20, 'bold'))
+        title_label = ttk.Label(self.main_frame, text="CC2 Programmer", font=('Arial', 20, 'bold'))
         title_label.grid(row=0, column=0, pady=(0, 20))
         
         # Create status frame
@@ -209,6 +212,13 @@ class FT232HMonitor:
         selected_port = self.device_var.get()
         self.show_snackbar(f"Selected port: {selected_port}")
     
+    def gui_callback(self, field_type, value):
+        """Callback function for GUI updates from serial recorder"""
+        if field_type == 'address':
+            self.address_label.config(text=f"Address: {value}")
+        elif field_type == 'version':
+            self.firmware_label.config(text=f"Firmware: {value}")
+    
     def clear_device_info(self):
         """Clear the address and firmware values"""
         self.address_label.config(text="Address: Not detected")
@@ -218,8 +228,6 @@ class FT232HMonitor:
         """Get serial output from the selected device for 5 seconds"""
         selected_port = self.device_var.get()
         if selected_port:
-            # self.show_snackbar(f"Recording serial output from {selected_port} for 5 seconds...")
-            
             # Clear previous values
             self.clear_device_info()
             
@@ -236,101 +244,19 @@ class FT232HMonitor:
     def _record_serial(self, port):
         """Record serial output for 5 seconds"""
         try:
-            # Open serial connection
-            ser = serial.Serial(port, baudrate=921600, timeout=1)
-            
-            # Record for 5 seconds
-            start_time = time.time()
-            output = ""
-            asked = False
-            address_received = False
-            version_received = False
-            line_buffer = ""
-            
-            while time.time() - start_time < 5:
-                if ser.in_waiting > 0:
-                    data = ser.read(ser.in_waiting)
-                    try:
-                        text = data.decode('utf-8', errors='replace')
-                        output += text
-                        
-                        # Add to line buffer and process complete lines
-                        line_buffer += text
-                        lines = line_buffer.split('\n')
-                        
-                        # Keep the last line in buffer if it's incomplete
-                        if not text.endswith('\n'):
-                            line_buffer = lines[-1]
-                            lines = lines[:-1]
-                        else:
-                            line_buffer = ""
-                        
-                        for line in lines:                            
-                            # Check for complete device info line
-                            if line.startswith('[ALL ]: Device: Shell; ID:'):
-                                print(line + '\n', end='', flush=True)
-                                # Extract address from the line
-                                if 'ID:' in line and not address_received:
-                                    address = line.split('ID:')[1].strip()
-                                    # Update GUI from main thread
-                                    self.root.after(0, lambda addr=address: self.address_label.config(text=f"Address: {addr}"))
-                                    address_received = True
-                            
-                            # Check for partial device info line (first part)
-                            elif line.startswith('[ALL ]: Device: Shell') and not line.endswith('; ID:'):
-                                # This might be the first part of a split line
-                                pass
-                            
-                            # Check for partial device info line (second part with ID)
-                            elif line.strip().startswith('; ID:') and not address_received:
-                                # This is the second part of a split device line
-                                address = line.strip().split('ID:')[1].strip()
-                                # Update GUI from main thread
-                                self.root.after(0, lambda addr=address: self.address_label.config(text=f"Address: {addr}"))
-                                address_received = True
-                            
-                            # Check for version line
-                            if line.startswith('[ALL ]: CoolCure2 - Version:'):
-                                # Extract version from the line
-                                if 'Version:' in line and not version_received:
-                                    version = line.split('Version:')[1].strip()
-                                    # Update GUI from main thread
-                                    self.root.after(0, lambda ver=version: self.firmware_label.config(text=f"Firmware: {ver}"))
-                                    version_received = True
-                        
-                        # Check if both values are received, exit early if so
-                        if address_received and version_received:
-                            print("\n" + "=" * 50)
-                            print("Both address and version received - stopping early")
-                            print("=" * 50 + "\n")
-                            break
-                            
-                    except UnicodeDecodeError:
-                        # Print as hex if can't decode
-                        print(f"[HEX: {data.hex()}]", end='', flush=True)
-                if time.time() - start_time > 1 and asked == False:
-                    asked = True
-                    ser.write(b"?\n")
-                
-                time.sleep(0.01)  # Small delay to prevent busy waiting
-            
-            ser.close()
+            # Use the serial recorder to get device information
+            result = self.serial_recorder.record_device_info(port, duration=5, baudrate=921600)
             
             # Update GUI from main thread
             self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
             
             # Check if we received both values
-            if address_received and version_received:
+            if result['success']:
                 # self.root.after(0, lambda: self.show_snackbar("Device information received successfully", "success"))
                 pass
             else:
                 self.root.after(0, lambda: self.show_snackbar("Information not received", "warning"))
             
-        except serial.SerialException as e:
-            error_msg = f"Serial error: {str(e)}"
-            print(f"ERROR: {error_msg}")
-            self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
-            self.root.after(0, lambda: self.show_snackbar(error_msg, "error"))
         except Exception as e:
             error_msg = f"Unexpected error: {str(e)}"
             print(f"ERROR: {error_msg}")
