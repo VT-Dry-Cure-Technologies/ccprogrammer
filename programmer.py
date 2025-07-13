@@ -13,6 +13,7 @@ from datetime import datetime
 
 # Import USB detection module
 from usb import USBDeviceDetector, scan_all_devices
+from print_qr import print_qr_code
 
 # Import flash module
 from flash import ESP32Flasher
@@ -219,7 +220,7 @@ class FT232HMonitor:
         selected_port = self.device_var.get()
         if selected_port:
             self.show_snackbar(f"Printing QR code for device on port: {selected_port}")
-            # TODO: Implement actual QR code printing logic
+            print_qr_code("E4B13797BACC")
         else:
             self.show_snackbar("No device selected for printing", "warning")
     
