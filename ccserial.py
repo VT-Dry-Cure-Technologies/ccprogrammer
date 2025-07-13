@@ -20,7 +20,7 @@ class SerialRecorder:
         """
         self.gui_callback = gui_callback
     
-    def record_device_info(self, port, duration=5, baudrate=921600):
+    def record_device_info(self, port, duration=10, baudrate=921600):
         """
         Record serial output and extract device information.
         
@@ -38,8 +38,8 @@ class SerialRecorder:
             
             # Record for specified duration
             start_time = time.time()
+            last_query_time = 0  # Track when we last sent a query
             output = ""
-            asked = False
             address_received = False
             version_received = False
             line_buffer = ""
@@ -108,10 +108,11 @@ class SerialRecorder:
                         # Print as hex if can't decode
                         print(f"[HEX: {data.hex()}]", end='', flush=True)
                 
-                # Send query command after 1 second if not already sent
-                if time.time() - start_time > 1 and asked == False:
-                    asked = True
+                # Send query command every second
+                current_time = time.time()
+                if current_time - last_query_time >= 1:
                     ser.write(b"?\n")
+                    last_query_time = current_time
                 
                 time.sleep(0.01)  # Small delay to prevent busy waiting
             
@@ -147,7 +148,7 @@ class SerialRecorder:
             }
 
 
-def record_device_info(port, duration=5, baudrate=921600, gui_callback=None):
+def record_device_info(port, duration=10, baudrate=921600, gui_callback=None):
     """
     Convenience function to record device information.
     

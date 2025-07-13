@@ -71,7 +71,7 @@ class FT232HMonitor:
         self.device_dropdown.bind("<<ComboboxSelected>>", self.on_device_selected)
         
         # Get Serial button
-        self.get_serial_button = ttk.Button(self.dropdown_frame, text="Get Info", command=self.get_serial_output, width=12)
+        self.get_serial_button = ttk.Button(self.dropdown_frame, text="Get Info", command=self.get_device_info, width=12)
         self.get_serial_button.grid(row=0, column=1)
         
         # ESP32 Device Info (only shown when connected)
@@ -176,6 +176,8 @@ class FT232HMonitor:
         
         if previous_device_connected != new_device_connected:
             self.clear_device_info()
+            # run get_serial_output after 5 seconds
+            self.get_device_info()
         self.device_connected = new_device_connected
     
     def show_connected_elements(self, tty_devices):
@@ -224,7 +226,7 @@ class FT232HMonitor:
         self.address_label.config(text="Address: Not detected")
         self.firmware_label.config(text="Firmware: Not detected")
     
-    def get_serial_output(self):
+    def get_device_info(self):
         """Get serial output from the selected device for 5 seconds"""
         selected_port = self.device_var.get()
         if selected_port:
@@ -245,7 +247,7 @@ class FT232HMonitor:
         """Record serial output for 5 seconds"""
         try:
             # Use the serial recorder to get device information
-            result = self.serial_recorder.record_device_info(port, duration=5, baudrate=921600)
+            result = self.serial_recorder.record_device_info(port, duration=10, baudrate=921600)
             
             # Update GUI from main thread
             self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
