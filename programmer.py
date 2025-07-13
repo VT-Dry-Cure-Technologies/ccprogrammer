@@ -10,6 +10,8 @@ import sys
 import threading
 import time
 from datetime import datetime
+import serial
+import re
 
 # Import USB detection module
 from usb import USBDeviceDetector, scan_all_devices
@@ -54,12 +56,20 @@ class FT232HMonitor:
         self.status_label = ttk.Label(self.status_frame, text="Device not connected", font=('Arial', 16))
         self.status_label.grid(row=0, column=0, pady=10)
         
+        # Dropdown and Get Serial button frame
+        self.dropdown_frame = ttk.Frame(self.status_frame)
+        self.dropdown_frame.grid(row=1, column=0, pady=(10, 10))
+        self.dropdown_frame.grid_remove()  # Hidden by default
+        
         # Dropdown for FT232H TTY ports (only shown when connected)
         self.device_var = tk.StringVar()
-        self.device_dropdown = ttk.Combobox(self.status_frame, textvariable=self.device_var, state="readonly", font=('Arial', 12), width=25)
-        self.device_dropdown.grid(row=1, column=0, pady=(10, 10))
+        self.device_dropdown = ttk.Combobox(self.dropdown_frame, textvariable=self.device_var, state="readonly", font=('Arial', 12), width=25)
+        self.device_dropdown.grid(row=0, column=0, padx=(0, 10))
         self.device_dropdown.bind("<<ComboboxSelected>>", self.on_device_selected)
-        self.device_dropdown.grid_remove()  # Hidden by default
+        
+        # Get Serial button
+        self.get_serial_button = ttk.Button(self.dropdown_frame, text="Get Info", command=self.get_serial_output, width=12)
+        self.get_serial_button.grid(row=0, column=1)
         
         # ESP32 Device Info (only shown when connected)
         self.device_info_frame = ttk.Frame(self.status_frame)
@@ -67,11 +77,11 @@ class FT232HMonitor:
         self.device_info_frame.grid_remove()  # Hidden by default
         
         # ESP32 Address
-        self.address_label = ttk.Label(self.device_info_frame, text="Address: E4B13797BACC", font=('Arial', 12))
+        self.address_label = ttk.Label(self.device_info_frame, text="Address: Not detected", font=('Arial', 12))
         self.address_label.grid(row=0, column=0, pady=(0, 5))
         
         # ESP32 Firmware Version
-        self.firmware_label = ttk.Label(self.device_info_frame, text="Firmware: 1.12", font=('Arial', 12))
+        self.firmware_label = ttk.Label(self.device_info_frame, text="Firmware: Not detected", font=('Arial', 12))
         self.firmware_label.grid(row=1, column=0, pady=(0, 10))
         
         # Action buttons (only shown when connected)
@@ -110,6 +120,9 @@ class FT232HMonitor:
         # Snackbar auto-hide timer
         self.snackbar_timer = None
         
+        # Device connected state
+        self.device_connected = False
+        
         # Start monitoring thread
         self.running = True
         self.monitor_thread = threading.Thread(target=self.monitor_devices, daemon=True)
@@ -144,24 +157,32 @@ class FT232HMonitor:
     
     def update_display(self, ft232h_devices, tty_devices, error=None):
         """Update the display with device information"""
+        previous_device_connected = self.device_connected
         if error:
+            new_device_connected = False
             self.status_label.config(text="Device not connected", foreground="red")
             self.hide_connected_elements()
         elif ft232h_devices:
+            new_device_connected = True
             self.status_label.config(text="Device connected", foreground="green")
             self.show_connected_elements(tty_devices)
         else:
+            new_device_connected = False
             self.status_label.config(text="Device not connected", foreground="red")
             self.hide_connected_elements()
+        
+        if previous_device_connected != new_device_connected:
+            self.clear_device_info()
+        self.device_connected = new_device_connected
     
     def show_connected_elements(self, tty_devices):
         """Show elements when device is connected"""
-        # Show dropdown
+        # Show dropdown frame
         self.device_dropdown['values'] = tty_devices
         if tty_devices:
             if not self.device_var.get() or self.device_var.get() not in tty_devices:
                 self.device_var.set(tty_devices[0])
-        self.device_dropdown.grid()
+        self.dropdown_frame.grid()
         
         # Show device info
         self.device_info_frame.grid()
@@ -171,7 +192,7 @@ class FT232HMonitor:
     
     def hide_connected_elements(self):
         """Hide elements when device is not connected"""
-        self.device_dropdown.grid_remove()
+        self.dropdown_frame.grid_remove()
         self.device_info_frame.grid_remove()
         self.button_frame.grid_remove()
         self.device_var.set('')
@@ -187,6 +208,134 @@ class FT232HMonitor:
         """Handle device selection from dropdown"""
         selected_port = self.device_var.get()
         self.show_snackbar(f"Selected port: {selected_port}")
+    
+    def clear_device_info(self):
+        """Clear the address and firmware values"""
+        self.address_label.config(text="Address: Not detected")
+        self.firmware_label.config(text="Firmware: Not detected")
+    
+    def get_serial_output(self):
+        """Get serial output from the selected device for 5 seconds"""
+        selected_port = self.device_var.get()
+        if selected_port:
+            # self.show_snackbar(f"Recording serial output from {selected_port} for 5 seconds...")
+            
+            # Clear previous values
+            self.clear_device_info()
+            
+            # Disable button during recording
+            self.get_serial_button.config(state="disabled", text="Getting Info...")
+            self.root.update()
+            
+            # Start recording in a separate thread
+            recording_thread = threading.Thread(target=self._record_serial, args=(selected_port,), daemon=True)
+            recording_thread.start()
+        else:
+            self.show_snackbar("No device selected for serial recording", "warning")
+    
+    def _record_serial(self, port):
+        """Record serial output for 5 seconds"""
+        try:
+            # Open serial connection
+            ser = serial.Serial(port, baudrate=921600, timeout=1)
+            
+            # Record for 5 seconds
+            start_time = time.time()
+            output = ""
+            asked = False
+            address_received = False
+            version_received = False
+            line_buffer = ""
+            
+            while time.time() - start_time < 5:
+                if ser.in_waiting > 0:
+                    data = ser.read(ser.in_waiting)
+                    try:
+                        text = data.decode('utf-8', errors='replace')
+                        output += text
+                        
+                        # Add to line buffer and process complete lines
+                        line_buffer += text
+                        lines = line_buffer.split('\n')
+                        
+                        # Keep the last line in buffer if it's incomplete
+                        if not text.endswith('\n'):
+                            line_buffer = lines[-1]
+                            lines = lines[:-1]
+                        else:
+                            line_buffer = ""
+                        
+                        for line in lines:                            
+                            # Check for complete device info line
+                            if line.startswith('[ALL ]: Device: Shell; ID:'):
+                                print(line + '\n', end='', flush=True)
+                                # Extract address from the line
+                                if 'ID:' in line and not address_received:
+                                    address = line.split('ID:')[1].strip()
+                                    # Update GUI from main thread
+                                    self.root.after(0, lambda addr=address: self.address_label.config(text=f"Address: {addr}"))
+                                    address_received = True
+                            
+                            # Check for partial device info line (first part)
+                            elif line.startswith('[ALL ]: Device: Shell') and not line.endswith('; ID:'):
+                                # This might be the first part of a split line
+                                pass
+                            
+                            # Check for partial device info line (second part with ID)
+                            elif line.strip().startswith('; ID:') and not address_received:
+                                # This is the second part of a split device line
+                                address = line.strip().split('ID:')[1].strip()
+                                # Update GUI from main thread
+                                self.root.after(0, lambda addr=address: self.address_label.config(text=f"Address: {addr}"))
+                                address_received = True
+                            
+                            # Check for version line
+                            if line.startswith('[ALL ]: CoolCure2 - Version:'):
+                                # Extract version from the line
+                                if 'Version:' in line and not version_received:
+                                    version = line.split('Version:')[1].strip()
+                                    # Update GUI from main thread
+                                    self.root.after(0, lambda ver=version: self.firmware_label.config(text=f"Firmware: {ver}"))
+                                    version_received = True
+                        
+                        # Check if both values are received, exit early if so
+                        if address_received and version_received:
+                            print("\n" + "=" * 50)
+                            print("Both address and version received - stopping early")
+                            print("=" * 50 + "\n")
+                            break
+                            
+                    except UnicodeDecodeError:
+                        # Print as hex if can't decode
+                        print(f"[HEX: {data.hex()}]", end='', flush=True)
+                if time.time() - start_time > 1 and asked == False:
+                    asked = True
+                    ser.write(b"?\n")
+                
+                time.sleep(0.01)  # Small delay to prevent busy waiting
+            
+            ser.close()
+            
+            # Update GUI from main thread
+            self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
+            
+            # Check if we received both values
+            if address_received and version_received:
+                # self.root.after(0, lambda: self.show_snackbar("Device information received successfully", "success"))
+                pass
+            else:
+                self.root.after(0, lambda: self.show_snackbar("Information not received", "warning"))
+            
+        except serial.SerialException as e:
+            error_msg = f"Serial error: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
+            self.root.after(0, lambda: self.show_snackbar(error_msg, "error"))
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            print(f"ERROR: {error_msg}")
+            self.root.after(0, lambda: self.get_serial_button.config(state="normal", text="Get Info"))
+            self.root.after(0, lambda: self.show_snackbar(error_msg, "error"))
     
     def flash_device(self):
         """Flash the connected device"""
@@ -217,10 +366,10 @@ class FT232HMonitor:
     
     def print_qr_code(self):
         """Print the device's QR code"""
-        selected_port = self.device_var.get()
-        if selected_port:
-            self.show_snackbar(f"Printing QR code for device on port: {selected_port}")
-            print_qr_code("E4B13797BACC")
+        address = self.address_label.cget("text").split(": ")[1]
+        if address != "Not detected":
+            self.show_snackbar(f"Printing QR code for device: {address}")
+            print_qr_code(address)
         else:
             self.show_snackbar("No device selected for printing", "warning")
     
