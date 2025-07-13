@@ -1,7 +1,62 @@
 #!/usr/bin/python3
 import os
+import subprocess
+import re
+from bluetooth_scanner import scan_for_printer
+import concurrent.futures
 
 PRINTER_DEVICE = "/dev/rfcomm0"
+
+def check_and_bind_rfcomm(device_address):
+    """
+    Check if rfcomm0 is bound to the device address, if not bind it
+    
+    Args:
+        device_address (str): The Bluetooth device address to bind
+        
+    Returns:
+        bool: True if binding is successful or already bound, False otherwise
+    """
+    try:
+        # Check current rfcomm bindings
+        result = subprocess.run(['rfcomm'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print("Error: rfcomm command not found or failed")
+            return False
+        
+        # Parse rfcomm output to check if device is already bound
+        rfcomm_output = result.stdout
+        print(f"Current rfcomm bindings:\n{rfcomm_output}")
+        
+        # Check if rfcomm0 is already bound to our device
+        if f"rfcomm0: {device_address}" in rfcomm_output:
+            print(f"✓ rfcomm0 is already bound to {device_address}")
+            return True
+        
+        # Check if rfcomm0 exists but is bound to a different device
+        if "rfcomm0:" in rfcomm_output:
+            print("rfcomm0 exists but is bound to a different device, unbinding first...")
+            subprocess.run(['sudo', 'rfcomm', 'release', '0'], check=True)
+        
+        # Bind rfcomm0 to our device
+        print(f"Binding rfcomm0 to {device_address}...")
+        result = subprocess.run([
+            'sudo', 'rfcomm', 'bind', '0', device_address, '1'
+        ], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print(f"✓ Successfully bound rfcomm0 to {device_address}")
+            return True
+        else:
+            print(f"✗ Failed to bind rfcomm0: {result.stderr}")
+            return False
+            
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing rfcomm command: {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return False
 
 def print_qr_code(qr_data):
     """
@@ -10,6 +65,14 @@ def print_qr_code(qr_data):
     Args:
         qr_data (str): The data to encode in the QR code
     """
+    success, address = scan_for_printer(5)
+    if not success:
+        return "Error: Printer not found"
+    
+    # Check and bind rfcomm if needed
+    if not check_and_bind_rfcomm(address):
+        return "Error: Failed to bind rfcomm device"
+    
     tspl_commands = [
         "SIZE 50 mm, 30 mm\n",
         "GAP 2 mm, 0 mm\n",
@@ -21,12 +84,38 @@ def print_qr_code(qr_data):
     ]
 
     try:
-        with open(PRINTER_DEVICE, "w") as printer:
-            for command in tspl_commands:
-                printer.write(command)
-        print(f"QR code and text sent to printer with data: {qr_data}")
+        # Use sudo to write to the rfcomm device
+        print("Sending commands to printer...")
+        for command in tspl_commands:
+            result = subprocess.run([
+                'sudo', 'tee', '-a', PRINTER_DEVICE
+            ], input=command, text=True, capture_output=True)
+            
+            if result.returncode != 0:
+                print(f"Error writing command to printer: {result.stderr}")
+                return f"Error: Failed to write to printer"
+        
+        print(f"✓ QR code and text sent to printer with data: {qr_data}")
+        return "Success"
     except Exception as e:
         print(f"Error: {e}")
+        return f"Error: {e}"
+
+def print_qr_code_with_timeout(qr_data, timeout=15):
+    """
+    Run print_qr_code with a timeout. If the timeout is reached, return an error message.
+    Args:
+        qr_data (str): The data to encode in the QR code
+        timeout (int): Timeout in seconds
+    Returns:
+        str: Success or error message
+    """
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(print_qr_code, qr_data)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            return "Error: Print operation timed out"
 
 def main():
     """Main function to demonstrate usage"""

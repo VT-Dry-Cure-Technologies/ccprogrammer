@@ -14,7 +14,7 @@ import re
 
 # Import USB detection module
 from usb import USBDeviceDetector, scan_all_devices
-from print_qr import print_qr_code
+from print_qr import print_qr_code_with_timeout 
 
 # Import flash module
 from flash import ESP32Flasher
@@ -297,7 +297,11 @@ class FT232HMonitor:
         address = self.address_label.cget("text").split(": ")[1]
         if address != "Not detected":
             self.show_snackbar(f"Printing QR code for device: {address}")
-            print_qr_code(address)
+            message = print_qr_code_with_timeout(address)
+            if message == "Success":
+                self.show_snackbar(message, "success")
+            else:
+                self.show_snackbar(message, "error")
         else:
             self.show_snackbar("No device selected for printing", "warning")
     
