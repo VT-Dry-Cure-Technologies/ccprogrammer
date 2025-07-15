@@ -8,6 +8,7 @@ import asyncio
 import time
 from typing import Optional, Tuple
 from bleak import BleakScanner
+from bleak.backends.scanner import AdvertisementData
 
 
 class BluetoothScanner:
@@ -39,7 +40,7 @@ class BluetoothScanner:
                 devices = await scanner.discover(timeout=0.5)
                 
                 for device in devices:
-                    # print(f"  - {device.name} ({device.address})")
+                    print(f"  - {device.name} ({device.address})")
                     
                     # Check if this is our target device
                     if (device.name == self.target_device_name):
@@ -70,6 +71,61 @@ class BluetoothScanner:
             return False, None
 
 
+def parse_manufacturer_data(manufacturer_data):
+    """
+    Parse manufacturer data to extract deviceId.
+    Assumes deviceId is stored as a string after 2 bytes of manufacturer id.
+    """
+    # Example: {0xFFFF: b'\x12\x34DEVICEID'}
+    for key, value in manufacturer_data.items():
+        if len(value) > 2:
+            # DeviceId is after the first 2 bytes
+            try:
+                device_id = value[2:].decode(errors='replace')
+                return device_id
+            except Exception:
+                continue
+    return None
+
+async def scan_for_my_devices(timeout=5, deviceId=None):
+    """
+    Scan for BLE devices advertising service data with UUID FFF1, return True if deviceId is found, else False after timeout.
+    """
+    TARGET_SERVICE_DATA_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
+    print(f"Scanning for BLE devices advertising service data UUID {TARGET_SERVICE_DATA_UUID} and deviceId {deviceId}")
+    found = False
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def detection_callback(device, adv):
+        nonlocal found
+        service_data = adv.service_data if hasattr(adv, 'service_data') else {}
+        if TARGET_SERVICE_DATA_UUID not in service_data:
+            return
+        device_id_bytes = service_data[TARGET_SERVICE_DATA_UUID]
+        try:
+            adv_device_id = device_id_bytes.decode(errors='replace')
+        except Exception:
+            adv_device_id = device_id_bytes.hex()
+        # Compare case-insensitive, ignore colons
+        adv_device_id_clean = adv_device_id.replace(":", "").upper()
+        target_device_id_clean = deviceId.replace(":", "").upper() if deviceId else None
+        if adv_device_id_clean == target_device_id_clean:
+            print(f"Device found: Address={device.address}, DeviceId={adv_device_id}")
+            found = True
+            # Stop the scanner and set the event
+            loop.create_task(scanner.stop())
+            stop_event.set()
+
+    scanner = BleakScanner(detection_callback)
+    await scanner.start()
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        await scanner.stop()
+    return found
+
+
 def scan_for_printer(timeout=5) -> Tuple[bool, Optional[str]]:
     """
     Convenience function to scan for Printer001 device.
@@ -98,14 +154,21 @@ async def scan_for_printer_async(timeout=5) -> Tuple[bool, Optional[str]]:
     return await scanner.scan_for_device_async(timeout)
 
 
+# For manual testing
 if __name__ == "__main__":
-    # Test the scanner
-    print("Bluetooth Device Scanner (using bleak)")
-    print("=" * 40)
-    
-    success, address = scan_for_printer(5)
-    
-    if success:
-        print(f"\nSUCCESS: Device found at {address}")
+    import sys
+    if len(sys.argv) > 2 and sys.argv[1] == "mydevices":
+        device_id = sys.argv[2]
+        result = asyncio.run(scan_for_my_devices(5, device_id))
+        print("FOUND" if result else "NOT FOUND")
     else:
-        print(f"\nFAILED: Device not found within timeout period") 
+        # Test the scanner
+        print("Bluetooth Device Scanner (using bleak)")
+        print("=" * 40)
+        
+        success, address = scan_for_printer(5)
+        
+        if success:
+            print(f"\nSUCCESS: Device found at {address}")
+        else:
+            print(f"\nFAILED: Device not found within timeout period") 

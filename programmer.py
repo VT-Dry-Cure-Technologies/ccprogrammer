@@ -114,6 +114,10 @@ class FT232HMonitor:
         self.print_button = ttk.Button(self.button_frame, text="Print", command=self.print_qr_code, width=15)
         self.print_button.grid(row=0, column=1, padx=(10, 0))
         
+        # BT Test button
+        self.bt_test_button = ttk.Button(self.button_frame, text="BT Test", command=self.bt_test, width=15, state="disabled")
+        self.bt_test_button.grid(row=0, column=2, padx=(10, 0))
+        
         
         # Bind escape key
         self.root.bind('<Escape>', lambda e: self.root.quit())
@@ -232,6 +236,11 @@ class FT232HMonitor:
         """Callback function for GUI updates from serial recorder"""
         if field_type == 'address':
             self.address_label.config(text=f"Address: {value}")
+            # Enable BT Test button if address is detected
+            if value and value != "Not detected":
+                self.bt_test_button.config(state="normal")
+            else:
+                self.bt_test_button.config(state="disabled")
         elif field_type == 'version':
             self.firmware_label.config(text=f"Firmware: {value}")
     
@@ -239,6 +248,7 @@ class FT232HMonitor:
         """Clear the address and firmware values"""
         self.address_label.config(text="Address: Not detected")
         self.firmware_label.config(text="Firmware: Not detected")
+        self.bt_test_button.config(state="disabled")
     
     def get_device_info(self):
         """Get serial output from the selected device for 5 seconds"""
@@ -318,6 +328,28 @@ class FT232HMonitor:
                 self.show_snackbar(message, "error")
         else:
             self.show_snackbar("No address detected, cannot print QR code", "warning")
+    
+    def bt_test(self):
+        """Test for BLE device with the given address as deviceId"""
+        address_text = self.address_label.cget("text")
+        if address_text.startswith("Address: "):
+            device_id = address_text.split(": ", 1)[1]
+            if device_id and device_id != "Not detected":
+                self.bt_test_button.config(state="disabled", text="Testing...")
+                self.root.update()
+                def run_bt_test():
+                    import asyncio
+                    from bluetooth_scanner import scan_for_my_devices
+                    try:
+                        found = asyncio.run(scan_for_my_devices(5, device_id))
+                        msg = "BT Device FOUND" if found else "BT Device NOT FOUND"
+                        msg_type = "success" if found else "error"
+                    except Exception as e:
+                        msg = f"BT Test error: {e}"
+                        msg_type = "error"
+                    self.root.after(0, lambda: self.bt_test_button.config(state="normal", text="BT Test"))
+                    self.root.after(0, lambda: self.show_snackbar(msg, msg_type))
+                threading.Thread(target=run_bt_test, daemon=True).start()
     
     def show_snackbar(self, message, message_type="info"):
         """Show a snackbar notification"""
