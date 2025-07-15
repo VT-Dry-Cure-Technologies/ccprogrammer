@@ -1,26 +1,25 @@
 
-# Clone repo into /home/coolcure2/cc2
+Clone repo into /home/coolcure2/cc2
 
-# On linux and mac create venve first
+On linux and mac create venve first
 python3 -m venv ~/ccprog_venv
 source ~/ccprog_venv/bin/activate
 
-# Then install the requirements
+Then install the requirements
 pip install -r requirements.txt
 
-# To create desktop shortcut copy this into ~/Desktop/programmer.desktop 
+To create desktop shortcut copy this into ~/Desktop/programmer.desktop 
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=FT232H Monitor
+Name=CC2 Programmer
 Comment=FT232H Device Monitor and Programmer
 Exec=/home/coolcure2/ccprog_venv/bin/python /home/coolcure2/cc2/scripts/programmer.py
 Icon=applications-system
 Terminal=false
 Categories=Utility;System;
 
-
-# Copy this into /etc/systemd/system/programmer.service
+Copy this into /etc/systemd/system/programmer.service
 [Unit]
 Description=FT232H Monitor GUI
 After=network.target graphical-session.target
