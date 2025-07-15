@@ -21,6 +21,7 @@ from flash import ESP32Flasher
 
 # Import serial module
 from ccserial import SerialRecorder
+from update import update_firmware, get_current_version
 
 class FT232HMonitor:
     def __init__(self, root):
@@ -30,6 +31,7 @@ class FT232HMonitor:
         self.root.resizable(False, False)
         self.center_window()
         
+        
         # Initialize USB detector, flasher, and serial recorder
         self.usb_detector = USBDeviceDetector()
         self.flasher = ESP32Flasher()
@@ -37,8 +39,8 @@ class FT232HMonitor:
         
         # Configure root grid
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(0, weight=1)
-        root.rowconfigure(1, weight=0)  # For snackbar
+        root.rowconfigure(1, weight=1)
+        root.rowconfigure(2, weight=0)  # For snackbar
         
         # Create main frame
         self.main_frame = ttk.Frame(root, padding="20")
@@ -48,11 +50,23 @@ class FT232HMonitor:
         
         # Create title
         title_label = ttk.Label(self.main_frame, text="CC2 Programmer", font=('Arial', 20, 'bold'))
-        title_label.grid(row=0, column=0, pady=(0, 20))
-        
+        title_label.grid(row=0, column=0, pady=(0, 5))
+
+        # Add a frame to center version label and update button
+        version_update_frame = ttk.Frame(self.main_frame)
+        version_update_frame.grid(row=1, column=0, pady=(0, 0))
+
+        # Add current version label (centered)
+        self.version_label = ttk.Label(version_update_frame, text=f"Current Version: {get_current_version()}", font=('Arial', 12))
+        self.version_label.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Add check for update button (centered)
+        update_button = ttk.Button(version_update_frame, text="Check for update", command=self.on_update_clicked)
+        update_button.pack(side=tk.LEFT)
+
         # Create status frame
         self.status_frame = ttk.Frame(self.main_frame)
-        self.status_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.status_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.status_frame.columnconfigure(0, weight=1)
         
         # Device connection status
@@ -339,6 +353,20 @@ class FT232HMonitor:
         if self.snackbar_timer:
             self.root.after_cancel(self.snackbar_timer)
             self.snackbar_timer = None
+    
+    def on_update_clicked(self):
+        def run_update():
+            try:
+                self.show_snackbar("Updating firmware...", "info")
+                message = update_firmware()
+                if message == "Success":
+                    self.show_snackbar("Firmware update complete!", "success")
+                    self.version_label.config(text=f"Current Version: {get_current_version()}")
+                else:
+                    self.show_snackbar(message, "error")
+            except Exception as e:
+                self.show_snackbar(f"Update failed: {str(e)}", "error")
+        threading.Thread(target=run_update, daemon=True).start()
     
     def on_closing(self):
         """Handle window closing"""
