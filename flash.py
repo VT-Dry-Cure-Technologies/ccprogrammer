@@ -8,20 +8,17 @@ import subprocess
 import os
 import sys
 from pathlib import Path
+import esptool
 
 class ESP32Flasher:
     def __init__(self):
-        self.firmware_dir = Path(__file__).parent.parent / "cc2_firmware"
-        # Use the full path to esptool in the virtual environment
-        self.esptool_cmd = str(Path.home() / "escpos_venv" / "bin" / "esptool")
-        
+        self.firmware_dir = Path(__file__).parent / "firmware"
+
     def flash_device(self, port):
         """
-        Flash ESP32 device using esptool
-        
+        Flash ESP32 device using esptool library
         Args:
             port (str): The TTY port (e.g., '/dev/ttyUSB0')
-            
         Returns:
             tuple: (success: bool, message: str)
         """
@@ -29,76 +26,57 @@ class ESP32Flasher:
             # Check if firmware files exist
             if not self.firmware_dir.exists():
                 return False, f"Firmware directory not found: {self.firmware_dir}"
-            
+
             # Define firmware file paths
             bootloader_bin = self.firmware_dir / "CC2_Operation.ino.bootloader.bin"
             partitions_bin = self.firmware_dir / "CC2_Operation.ino.partitions.bin"
             firmware_bin = self.firmware_dir / "CC2_Operation.ino.bin"
             filesystem_bin = self.firmware_dir / "CC2_Operation.ino.filesystem.bin"
-            
+
             # Check if all required files exist
             required_files = [bootloader_bin, partitions_bin, firmware_bin, filesystem_bin]
             missing_files = [f.name for f in required_files if not f.exists()]
-            
+
             if missing_files:
                 return False, f"Missing firmware files: {', '.join(missing_files)}"
-            
-            # Build esptool command
-            cmd = [
-                self.esptool_cmd,
-                "--chip", "esp32s3",
-                "--port", port,
-                "--baud", "921600",
-                "--before", "default-reset",
-                "--after", "hard-reset",
-                "write-flash", "-z",
-                "0x0000", str(bootloader_bin),
-                "0x8000", str(partitions_bin),
-                "0x10000", str(firmware_bin),
-                "0x210000", str(filesystem_bin)
+
+            args = [
+                '--chip', 'esp32s3',
+                '--port', port,
+                '--baud', '921600',
+                '--before', 'default-reset',
+                '--after', 'hard-reset',
+                'write_flash', '-z',
+                '0x0000', str(bootloader_bin),
+                '0x8000', str(partitions_bin),
+                '0x10000', str(firmware_bin),
+                '0x210000', str(filesystem_bin)
             ]
-            
+
             print(f"Flashing device on port: {port}")
-            print(f"Command: {' '.join(cmd)}")
-            
-            # Execute the command with virtual environment activated
-            env = os.environ.copy()
-            env['PATH'] = str(Path.home() / "escpos_venv" / "bin") + ":" + env.get('PATH', '')
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=self.firmware_dir,
-                env=env
-            )
-            
-            if result.returncode == 0:
+            print(f"esptool args: {' '.join(args)}")
+
+            try:
+                esptool.main(args)
                 return True, "Flashing completed successfully!"
-            else:
-                error_msg = result.stderr if result.stderr else result.stdout
-                return False, f"Flashing failed: {error_msg}"
-                
-        except FileNotFoundError:
-            return False, "esptool command not found. Please install esptool or activate the correct virtual environment."
+            except SystemExit as e:
+                if e.code == 0:
+                    return True, "Flashing completed successfully!"
+                else:
+                    return False, f"Flashing failed with exit code {e.code}"
         except Exception as e:
             return False, f"Error during flashing: {str(e)}"
-    
+
     def check_esptool_available(self):
         """
-        Check if esptool is available in the virtual environment
-        
+        Check if esptool is available as a Python module
         Returns:
-            bool: True if esptool is available, False otherwise
+            bool: True if esptool is importable, False otherwise
         """
         try:
-            env = os.environ.copy()
-            env['PATH'] = str(Path.home() / "escpos_venv" / "bin") + ":" + env.get('PATH', '')
-            
-            result = subprocess.run([self.esptool_cmd, "--version"], 
-                                  capture_output=True, text=True, env=env)
-            return result.returncode == 0
-        except FileNotFoundError:
+            import esptool
+            return True
+        except ImportError:
             return False
     
     def get_firmware_info(self):

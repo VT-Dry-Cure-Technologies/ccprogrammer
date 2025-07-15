@@ -303,7 +303,7 @@ class FT232HMonitor:
             else:
                 self.show_snackbar(message, "error")
         else:
-            self.show_snackbar("No device selected for printing", "warning")
+            self.show_snackbar("No address detected, cannot print QR code", "warning")
     
     def show_snackbar(self, message, message_type="info"):
         """Show a snackbar notification"""

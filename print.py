@@ -4,9 +4,7 @@
 # sudo chmod 666 /dev/usb/lp0
 # ls -l /dev/usb/lp0
 # echo -e "SIZE 48 mm, 25 mm\nGAP 2 mm, 0 mm\nCLS\nTEXT 100,100,\"3\",0,1,1,\"TEST PRINT\"\nPRINT 1\n" > /dev/usb/lp0
-# python3 -m venv ~/escpos_venv
-# source ~/escpos_venv/bin/activate
-# pip3 install python-escpos
+
 import os
 
 PRINTER_DEVICE = "/dev/usb/lp0"
