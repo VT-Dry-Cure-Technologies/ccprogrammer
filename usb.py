@@ -73,7 +73,7 @@ class USBDeviceDetector:
                     device_info = f"FT232H USB Device: {device.Name} (DeviceID: {device.DeviceID}, Status: {status})"
                     ft232h_devices.append(device_info)
             if not ft232h_devices:
-                print("No FT232H devices found via WMI. Check Device Manager for 'Other devices' or 'Universal Serial Bus controllers'.")
+                print("No FT232H devices found via WMI. Ensure the driver ftdibus.sys is installed and device shows up as USB Serial Converter under USB")
             return ft232h_devices
         except Exception as e:
             print(f"Error checking Windows devices: {e}. Try running the script as Administrator.")
@@ -141,14 +141,7 @@ class USBDeviceDetector:
                 for port in ports:
                     print(f" - {port.device} (VID: {port.vid}, PID: {port.pid})")
                 if not ports:
-                    print("No COM ports detected. Ensure the FTDI VCP driver (ftser2k.sys) is installed correctly.")
-                    print("Steps to resolve:")
-                    print("1. Unplug the FT232H device.")
-                    print("2. Uninstall existing FTDI drivers using CDM Uninstaller from https://ftdichip.com/support/utilities/.")
-                    print("3. Download the ARM64 driver (e.g., CDM-v2.12.36.4-WHQL-Certified.zip) from https://ftdichip.com/drivers/vcp-drivers/.")
-                    print("4. Extract the ZIP and manually install 'ftdiport.inf' via Device Manager.")
-                    print("5. Plug in the device and verify 'USB Serial Port (COMx)' in Device Manager.")
-                    print("6. Try a different USB port (preferably USB 2.0) or another PC.")
+                    print("No COM ports detected. Ensure the FTDI VCP driver (ftser2k.sys) is installed correctly and COM port shows up under COM ports in device manager.")
             return ft232h_com_ports
         except Exception as e:
             print(f"Error finding COM ports: {e}")
