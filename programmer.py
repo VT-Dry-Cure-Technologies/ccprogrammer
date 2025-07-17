@@ -13,7 +13,7 @@ from datetime import datetime
 import re
 
 # Import USB detection module
-from usb import USBDeviceDetector, scan_all_devices
+from ccusb import USBDeviceDetector, scan_all_devices
 from print_qr import print_qr_code_with_timeout 
 
 # Import flash module
