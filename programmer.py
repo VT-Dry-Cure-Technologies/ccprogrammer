@@ -9,6 +9,7 @@ from tkinter import ttk
 import sys
 import threading
 import time
+import argparse
 from datetime import datetime
 import re
 
@@ -24,13 +25,15 @@ from ccserial import SerialRecorder
 from update import update_firmware, get_current_version
 
 class FT232HMonitor:
-    def __init__(self, root):
+    def __init__(self, root, auto_check=True):
         self.root = root
         self.root.title("CC2 Programmer")
         self.root.geometry("800x480")
         self.root.resizable(False, False)
         self.center_window()
         
+        # Store auto_check setting
+        self.auto_check = auto_check
         
         # Initialize USB detector, flasher, and serial recorder
         self.usb_detector = USBDeviceDetector()
@@ -69,9 +72,18 @@ class FT232HMonitor:
         self.status_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         self.status_frame.columnconfigure(0, weight=1)
         
+        # Create status and refresh button frame
+        self.status_refresh_frame = ttk.Frame(self.status_frame)
+        self.status_refresh_frame.grid(row=0, column=0, pady=10)
+        
         # Device connection status
-        self.status_label = ttk.Label(self.status_frame, text="Device not connected", font=('Arial', 16))
-        self.status_label.grid(row=0, column=0, pady=10)
+        self.status_label = ttk.Label(self.status_refresh_frame, text="Device not connected", font=('Arial', 16))
+        self.status_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Refresh button (only shown when auto_check is False)
+        self.refresh_button = ttk.Button(self.status_refresh_frame, text="Refresh", command=self.check_devices, width=10)
+        if not self.auto_check:
+            self.refresh_button.pack(side=tk.LEFT)
         
         # Dropdown and Get Serial button frame
         self.dropdown_frame = ttk.Frame(self.status_frame)
@@ -144,10 +156,11 @@ class FT232HMonitor:
         # Device connected state
         self.device_connected = False
         
-        # Start monitoring thread
+        # Start monitoring thread only if auto_check is True
         self.running = True
-        self.monitor_thread = threading.Thread(target=self.monitor_devices, daemon=True)
-        self.monitor_thread.start()
+        if self.auto_check:
+            self.monitor_thread = threading.Thread(target=self.monitor_devices, daemon=True)
+            self.monitor_thread.start()
         
         # Initial check
         self.check_devices()
@@ -407,9 +420,18 @@ class FT232HMonitor:
 
 def main():
     """Main function to run the application"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='CC2 Programmer - FT232 Device Monitor')
+    parser.add_argument('-no-auto-check', action='store_true', 
+                       help='Disable automatic device checking and add manual refresh button')
+    args = parser.parse_args()
+    
+    # Determine auto_check setting (default true, false if -no-auto-check is passed)
+    auto_check = not args.no_auto_check
+    
     try:
         root = tk.Tk()
-        app = FT232HMonitor(root)
+        app = FT232HMonitor(root, auto_check=auto_check)
         
         # Handle window closing
         root.protocol("WM_DELETE_WINDOW", app.on_closing)
