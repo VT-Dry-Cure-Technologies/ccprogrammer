@@ -2,3 +2,4 @@ esptool
 bleak
 pyserial 
 requests
+wmi
