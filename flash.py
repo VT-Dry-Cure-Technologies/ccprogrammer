@@ -14,6 +14,20 @@ class ESP32Flasher:
     def __init__(self):
         self.firmware_dir = Path(__file__).parent / "firmware"
 
+        # Fix for esptool stub_flasher path in PyInstaller
+        if getattr(sys, 'frozen', False):  # Running in PyInstaller bundle
+            bundle_dir = Path(sys._MEIPASS)
+            stub_flasher_path = bundle_dir / "esptool" / "targets" / "stub_flasher"
+            os.environ['ESPTOOL_STUB_FLASHER_PATH'] = str(stub_flasher_path)  # Optional, for debugging
+            # Monkey patching esptool's stub flasher directory if necessary
+            import esptool.targets.stub_flasher
+            esptool.targets.stub_flasher.STUB_FLASHER_DIR = str(stub_flasher_path)
+            print("Stub flasher dir:", esptool.targets.stub_flasher.STUB_FLASHER_DIR)
+
+
+    def set_firmware_dir(self, firmware_dir):
+        self.firmware_dir = Path(firmware_dir)
+
     def flash_device(self, port):
         """
         Flash ESP32 device using esptool library
@@ -60,11 +74,13 @@ class ESP32Flasher:
                 esptool.main(args)
                 return True, "Flashing completed successfully!"
             except SystemExit as e:
+                print(e)
                 if e.code == 0:
                     return True, "Flashing completed successfully!"
                 else:
                     return False, f"Flashing failed with exit code {e.code}"
         except Exception as e:
+            print(e)
             return False, f"Error during flashing: {str(e)}"
 
     def check_esptool_available(self):

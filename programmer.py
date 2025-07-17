@@ -5,13 +5,14 @@ Monitors FT232H devices and displays connection status every second.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
 import sys
 import threading
 import time
 import argparse
 from datetime import datetime
 import re
+from pathlib import Path
 
 # Import USB detection module
 from ccusb import USBDeviceDetector, scan_all_devices
@@ -34,6 +35,7 @@ class FT232HMonitor:
         
         # Store auto_check setting
         self.auto_check = auto_check
+        self.folder_path = Path(__file__).parent / "firmware"
         
         # Initialize USB detector, flasher, and serial recorder
         self.usb_detector = USBDeviceDetector()
@@ -60,12 +62,17 @@ class FT232HMonitor:
         version_update_frame.grid(row=1, column=0, pady=(0, 0))
 
         # Add current version label (centered)
-        self.version_label = ttk.Label(version_update_frame, text=f"Current Version: {get_current_version()}", font=('Arial', 12))
+        self.version_label = ttk.Label(version_update_frame, text=f"Current Version: {get_current_version(self.folder_path)}", font=('Arial', 12))
         self.version_label.pack(side=tk.LEFT, padx=(0, 10))
 
+        # Add folder picker button (centered)
+        # Make the text not icon for linux
+        folder_button = ttk.Button(version_update_frame, text="Firmware Folder", command=self.on_folder_clicked)
+        folder_button.pack(side=tk.LEFT)
+
         # Add check for update button (centered)
-        update_button = ttk.Button(version_update_frame, text="Check for update", command=self.on_update_clicked)
-        update_button.pack(side=tk.LEFT)
+        update_button = ttk.Button(version_update_frame, text="Download Latest", command=self.on_update_clicked)
+        update_button.pack(side=tk.LEFT, padx=(0, 5))
 
         # Create status frame
         self.status_frame = ttk.Frame(self.main_frame)
@@ -403,16 +410,25 @@ class FT232HMonitor:
         def run_update():
             try:
                 self.show_snackbar("Updating firmware...", "info")
-                message = update_firmware()
+                message = update_firmware(self.folder_path)
                 if message == "Success":
                     self.show_snackbar("Firmware update complete!", "success")
-                    self.version_label.config(text=f"Current Version: {get_current_version()}")
+                    self.version_label.config(text=f"Current Version: {get_current_version(self.folder_path)}")
                 else:
                     self.show_snackbar(message, "error")
             except Exception as e:
                 self.show_snackbar(f"Update failed: {str(e)}", "error")
         threading.Thread(target=run_update, daemon=True).start()
-    
+
+    def on_folder_clicked(self):
+        """Open a folder picker dialog and set firmware directory"""
+        folder_path = filedialog.askdirectory()
+        if folder_path:
+            self.folder_path = Path(folder_path) 
+            self.version_label.config(text=f"Current Version: {get_current_version(self.folder_path)}")
+            self.flasher.set_firmware_dir(folder_path)
+            self.show_snackbar(f"Firmware directory set to: {folder_path}", "success")
+
     def on_closing(self):
         """Handle window closing"""
         self.running = False
@@ -426,8 +442,14 @@ def main():
                        help='Disable automatic device checking and add manual refresh button')
     args = parser.parse_args()
     
-    # Determine auto_check setting (default true, false if -no-auto-check is passed)
-    auto_check = not args.no_auto_check
+    # Determine auto_check setting
+    if args.no_auto_check:
+        auto_check = False
+    else:
+        if sys.platform.startswith('win'):
+            auto_check = False
+        else:
+            auto_check = True
     
     try:
         root = tk.Tk()
