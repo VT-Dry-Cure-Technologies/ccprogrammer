@@ -66,7 +66,7 @@ class SerialRecorder:
                         
                         for line in lines:
                             # Check for complete device info line
-                            if line.startswith('[ALL ]: Device: Shell; ID:'):
+                            if line.startswith('[ALL ]: Device:'):
                                 print(line + '\n', end='', flush=True)
                                 # Extract address from the line
                                 if 'ID:' in line and not address_received:
@@ -163,3 +163,15 @@ def record_device_info(port, duration=10, baudrate=921600, gui_callback=None):
     """
     recorder = SerialRecorder(gui_callback)
     return recorder.record_device_info(port, duration, baudrate) 
+
+
+def main():
+    port = "/dev/ttyUSB0"
+    baudrate = 921600
+    duration = 10  # You can adjust this if needed
+    recorder = SerialRecorder()
+    result = recorder.record_device_info(port, duration=duration, baudrate=baudrate)
+    print("Result:", result)
+
+if __name__ == "__main__":
+    main() 
