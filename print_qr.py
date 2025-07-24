@@ -78,7 +78,7 @@ def print_qr_code(qr_data):
         "GAP 2 mm, 0 mm\n",
         "CLS\n",
         f"QRCODE 50,50,L,5,A,0,M2,S3,\"{qr_data}\"\n",
-        "TEXT 180,75,\"3\",0,1,1,\"VT Dry & Cure Technologies\"\n",
+        "TEXT 180,75,\"3\",0,1,1,\"VTDC Tech\"\n",
         f"TEXT 180,125,\"3\",0,1,1,\"{qr_data}\"\n",
         "PRINT 1\n"
     ]
