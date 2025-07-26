@@ -44,3 +44,8 @@ sudo systemctl daemon-reload && sudo systemctl enable programmer.service
 
 # to remotely run the programmer to pi display
 export DISPLAY=:0
+
+# To build windows executable
+pyinstaller -F programmer.py --clean --hidden-import=usb.backend.libusb1 --hidden-import=usb.backend --add-data "C:\Python313\Lib\site-packages\esptool\targets\stub_flasher;esptool\targets\stub_flasher"       
+
+pyinstaller -F programmer.py --clean   --hidden-import=usb.backend.libusb1   --hidden-import=usb.backend   --add-data "/home/coolcure2/ccprog_venv/lib/python3.11/site-packages/esptool/targets/stub_flasher:esptool/targets/stub_flasher"
