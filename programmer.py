@@ -96,15 +96,29 @@ class FT232HMonitor:
         self.dropdown_frame = ttk.Frame(self.status_frame)
         self.dropdown_frame.grid(row=1, column=0, pady=(10, 10))
         self.dropdown_frame.grid_remove()  # Hidden by default
-        
+        style = ttk.Style()
+        style.theme_use('clam')  
+        style.configure("Big.TButton", font=('Arial', 14))
+        style.configure(
+            "Big.TCombobox",
+            font=('Arial', 14),
+            padding=(10, 10),  # (horizontal, vertical)
+        )
+
         # Dropdown for FT232H TTY ports (only shown when connected)
         self.device_var = tk.StringVar()
-        self.device_dropdown = ttk.Combobox(self.dropdown_frame, textvariable=self.device_var, state="readonly", font=('Arial', 12), width=25)
+        self.device_dropdown = ttk.Combobox(
+            self.dropdown_frame,
+            textvariable=self.device_var,
+            state="readonly",
+            width=25,
+            style="Big.TCombobox"
+        )
         self.device_dropdown.grid(row=0, column=0, padx=(0, 10))
         self.device_dropdown.bind("<<ComboboxSelected>>", self.on_device_selected)
         
         # Get Serial button
-        self.get_serial_button = ttk.Button(self.dropdown_frame, text="Get Info", command=self.get_device_info, width=12)
+        self.get_serial_button = ttk.Button(self.dropdown_frame, text="Get Info", command=self.get_device_info, width=12, style="Big.TButton")
         self.get_serial_button.grid(row=0, column=1)
         
         # ESP32 Device Info (only shown when connected)
@@ -124,18 +138,23 @@ class FT232HMonitor:
         self.button_frame = ttk.Frame(self.status_frame)
         self.button_frame.grid(row=3, column=0, pady=(10, 10))
         self.button_frame.grid_remove()  # Hidden by default
-        
+
         # Flash button
-        self.flash_button = ttk.Button(self.button_frame, text="Flash", command=self.flash_device, width=15)
-        self.flash_button.grid(row=0, column=0, padx=(0, 10))
+        self.flash_button = ttk.Button(self.button_frame, text="Flash", command=self.flash_device, width=15, style="Big.TButton")
+        self.flash_button.grid(row=0, column=0, padx=(0, 0))
         
         # Print button
-        self.print_button = ttk.Button(self.button_frame, text="Print", command=self.print_qr_code, width=15)
-        self.print_button.grid(row=0, column=1, padx=(10, 0))
-        
+        self.print_button = ttk.Button(self.button_frame, text="Print", width=15, style="Big.TButton", state="disabled")
+        self.print_button.grid(row=0, column=1, padx=(30, 0))
+        # Long-press detection for Print button
+        self.print_press_time = None
+        self.print_long_press_timer = None
+        self.print_button.bind('<ButtonPress-1>', self.on_print_press)
+        self.print_button.bind('<ButtonRelease-1>', self.on_print_release)
+
         # BT Test button
-        self.bt_test_button = ttk.Button(self.button_frame, text="BT Test", command=self.bt_test, width=15, state="disabled")
-        self.bt_test_button.grid(row=0, column=2, padx=(10, 0))
+        self.bt_test_button = ttk.Button(self.button_frame, text="BT Test", command=self.bt_test, width=15, state="disabled", style="Big.TButton")
+        self.bt_test_button.grid(row=0, column=2, padx=(30, 0))
         
         
         # Bind escape key
@@ -199,22 +218,19 @@ class FT232HMonitor:
     def update_display(self, ft232h_devices, tty_devices, error=None):
         """Update the display with device information"""
         previous_device_connected = self.device_connected
-        if error:
+        if error or not ft232h_devices:
             new_device_connected = False
             self.status_label.config(text="Device not connected", foreground="red")
+            self.status_refresh_frame.grid(row=0, column=0, pady=10)
             self.hide_connected_elements()
-        elif ft232h_devices:
-            new_device_connected = True
-            self.status_label.config(text="Device connected", foreground="green")
-            self.show_connected_elements(tty_devices)
         else:
-            new_device_connected = False
-            self.status_label.config(text="Device not connected", foreground="red")
-            self.hide_connected_elements()
-        
+            new_device_connected = True
+            self.status_label.config(text="")  # Clear any text
+            self.status_refresh_frame.grid(row=0, column=0, pady=1)
+            self.show_connected_elements(tty_devices)
+
         if previous_device_connected != new_device_connected:
             self.clear_device_info()
-            # run get_serial_output after 5 seconds
             self.get_device_info()
         self.device_connected = new_device_connected
     
@@ -259,8 +275,10 @@ class FT232HMonitor:
             # Enable BT Test button if address is detected
             if value and value != "Not detected":
                 self.bt_test_button.config(state="normal")
+                self.print_button.config(state="normal")
             else:
                 self.bt_test_button.config(state="disabled")
+                self.print_button.config(state="disabled")
         elif field_type == 'version':
             self.firmware_label.config(text=f"Firmware: {value}")
     
@@ -269,6 +287,7 @@ class FT232HMonitor:
         self.address_label.config(text="Address: Not detected")
         self.firmware_label.config(text="Firmware: Not detected")
         self.bt_test_button.config(state="disabled")
+        self.print_button.config(state="disabled")
     
     def get_device_info(self):
         """Get serial output from the selected device for 5 seconds"""
@@ -336,12 +355,12 @@ class FT232HMonitor:
         else:
             self.show_snackbar("No device selected for flashing", "warning")
     
-    def print_qr_code(self):
+    def print_qr_code(self, number_of_prints=1):
         """Print the device's QR code"""
         address = self.address_label.cget("text").split(": ")[1]
         if address != "Not detected":
             self.show_snackbar(f"Printing QR code for device: {address}")
-            message = print_qr_code_with_timeout(address)
+            message = print_qr_code_with_timeout(address, number_of_prints)
             if message == "Success":
                 self.show_snackbar(message, "success")
             else:
@@ -349,6 +368,27 @@ class FT232HMonitor:
         else:
             self.show_snackbar("No address detected, cannot print QR code", "warning")
     
+    def on_print_press(self, event):
+        import time
+        self.print_press_time = time.time()
+        self.print_long_press_timer = self.root.after(1500, self.print_qr_code_long_press)
+
+    def on_print_release(self, event):
+        import time
+        if self.print_long_press_timer:
+            self.root.after_cancel(self.print_long_press_timer)
+            self.print_long_press_timer = None
+        if self.print_press_time:
+            held_time = time.time() - self.print_press_time
+            if held_time < 1.5:
+                self.print_qr_code()
+        self.print_press_time = None
+
+    def print_qr_code_long_press(self):
+        self.print_long_press_timer = None
+        self.print_qr_code(3)
+        # Implement alternate action here
+
     def bt_test(self):
         """Test for BLE device with the given address as deviceId"""
         address_text = self.address_label.cget("text")

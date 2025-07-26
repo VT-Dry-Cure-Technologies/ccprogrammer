@@ -58,7 +58,7 @@ def check_and_bind_rfcomm(device_address):
         print(f"Unexpected error: {e}")
         return False
 
-def print_qr_code(qr_data):
+def print_qr_code(qr_data, number_of_prints=1):
     """
     Print a QR code with the given data
     
@@ -84,24 +84,19 @@ def print_qr_code(qr_data):
     ]
 
     try:
-        # Use sudo to write to the rfcomm device
+        # Use Python file I/O to write to the rfcomm device
         print("Sending commands to printer...")
-        for command in tspl_commands:
-            result = subprocess.run([
-                'sudo', 'tee', '-a', PRINTER_DEVICE
-            ], input=command, text=True, capture_output=True)
-            
-            if result.returncode != 0:
-                print(f"Error writing command to printer: {result.stderr}")
-                return f"Error: Failed to write to printer"
-        
+        for i in range(number_of_prints):
+            with open(PRINTER_DEVICE, 'w') as printer:
+                for command in tspl_commands:
+                    printer.write(command)
         print(f"✓ QR code and text sent to printer with data: {qr_data}")
         return "Success"
     except Exception as e:
         print(f"Error: {e}")
         return f"Error: {e}"
 
-def print_qr_code_with_timeout(qr_data, timeout=15):
+def print_qr_code_with_timeout(qr_data, number_of_prints=1, timeout=15):
     """
     Run print_qr_code with a timeout. If the timeout is reached, return an error message.
     Args:
@@ -111,7 +106,7 @@ def print_qr_code_with_timeout(qr_data, timeout=15):
         str: Success or error message
     """
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(print_qr_code, qr_data)
+        future = executor.submit(print_qr_code, qr_data, number_of_prints)
         try:
             return future.result(timeout=timeout)
         except concurrent.futures.TimeoutError:
