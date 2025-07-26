@@ -28,6 +28,8 @@ class USBDeviceDetector:
         """Check for FT232H devices using platform-appropriate method"""
         if self.is_windows:
             return self._check_ft232h_windows()
+        elif platform.system() == "Darwin":
+            return self._check_ft232h_macos()
         else:
             return self._check_ft232h_linux()
     
@@ -79,10 +81,45 @@ class USBDeviceDetector:
             print(f"Error checking Windows devices: {e}. Try running the script as Administrator.")
             return []
     
+    def _check_ft232h_macos(self):
+        """Check for FT232H devices using system_profiler (macOS)"""
+        try:
+            result = subprocess.run(['system_profiler', 'SPUSBDataType'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                ft232h_devices = []
+                lines = result.stdout.split('\n')
+                current_device = []
+                for line in lines:
+                    if line.strip() == "":
+                        if current_device:
+                            device_info = "\n".join(current_device)
+                            if (self.ft232h_vendor_id.lower() in device_info.lower() and self.ft232h_product_id.lower() in device_info.lower()) or "FT232H" in device_info:
+                                ft232h_devices.append(device_info)
+                            current_device = []
+                    else:
+                        current_device.append(line)
+                # Catch last device
+                if current_device:
+                    device_info = "\n".join(current_device)
+                    if (self.ft232h_vendor_id.lower() in device_info.lower() and self.ft232h_product_id.lower() in device_info.lower()) or "FT232H" in device_info:
+                        ft232h_devices.append(device_info)
+                return ft232h_devices
+            else:
+                print("system_profiler command failed")
+                return []
+        except subprocess.TimeoutExpired:
+            print("Device check timeout")
+            return []
+        except Exception as e:
+            print(f"Error checking macOS devices: {e}")
+            return []
+    
     def find_ft232h_tty_devices(self):
         """Find tty/COM devices specifically for FT232H devices"""
         if self.is_windows:
             return self._find_ft232h_com_windows()
+        elif platform.system() == "Darwin":
+            return self._find_ft232h_tty_macos()
         else:
             return self._find_ft232h_tty_linux()
     
@@ -146,6 +183,16 @@ class USBDeviceDetector:
         except Exception as e:
             print(f"Error finding COM ports: {e}")
             return []
+    
+    def _find_ft232h_tty_macos(self):
+        """Find tty devices for FT232H on macOS"""
+        import glob
+        ft232h_tty_devices = []
+        for dev in glob.glob('/dev/tty.usbserial-*'):
+            ft232h_tty_devices.append(dev)
+        for dev in glob.glob('/dev/cu.usbserial-*'):
+            ft232h_tty_devices.append(dev)
+        return ft232h_tty_devices
     
     def verify_ft232h_device(self, tty_device):
         """Verify that a TTY/COM device is actually an FT232H"""
