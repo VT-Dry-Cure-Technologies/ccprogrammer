@@ -1,77 +1,36 @@
 #!/usr/bin/python3
-import os
 import subprocess
-import re
+import signal
 from bluetooth_scanner import scan_for_printer
-import concurrent.futures
 
 PRINTER_DEVICE = "/dev/rfcomm0"
 
-def check_and_bind_rfcomm(device_address):
-    """
-    Check if rfcomm0 is bound to the device address, if not bind it
-    
-    Args:
-        device_address (str): The Bluetooth device address to bind
-        
-    Returns:
-        bool: True if binding is successful or already bound, False otherwise
-    """
+def bind_rfcomm(device_address):
+    """Bind rfcomm0 to device address"""
     try:
-        # Check current rfcomm bindings
+        # Check if already bound
         result = subprocess.run(['rfcomm'], capture_output=True, text=True)
-        if result.returncode != 0:
-            print("Error: rfcomm command not found or failed")
-            return False
-        
-        # Parse rfcomm output to check if device is already bound
-        rfcomm_output = result.stdout
-        print(f"Current rfcomm bindings:\n{rfcomm_output}")
-        
-        # Check if rfcomm0 is already bound to our device
-        if f"rfcomm0: {device_address}" in rfcomm_output:
-            print(f"✓ rfcomm0 is already bound to {device_address}")
+        if f"rfcomm0: {device_address}" in result.stdout:
             return True
         
-        # Check if rfcomm0 exists but is bound to a different device
-        if "rfcomm0:" in rfcomm_output:
-            print("rfcomm0 exists but is bound to a different device, unbinding first...")
-            subprocess.run(['sudo', 'rfcomm', 'release', '0'], check=True)
+        # Release if bound to different device
+        if "rfcomm0:" in result.stdout:
+            subprocess.run(['sudo', 'rfcomm', 'release', '0'])
         
-        # Bind rfcomm0 to our device
-        print(f"Binding rfcomm0 to {device_address}...")
-        result = subprocess.run([
-            'sudo', 'rfcomm', 'bind', '0', device_address, '1'
-        ], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            print(f"✓ Successfully bound rfcomm0 to {device_address}")
-            return True
-        else:
-            print(f"✗ Failed to bind rfcomm0: {result.stderr}")
-            return False
-            
-    except subprocess.CalledProcessError as e:
-        print(f"Error executing rfcomm command: {e}")
-        return False
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+        # Bind to device
+        result = subprocess.run(['sudo', 'rfcomm', 'bind', '0', device_address, '1'])
+        return result.returncode == 0
+    except:
         return False
 
 def print_qr_code(qr_data, number_of_prints=1):
-    """
-    Print a QR code with the given data
-    
-    Args:
-        qr_data (str): The data to encode in the QR code
-    """
+    """Print QR code with given data"""
     success, address = scan_for_printer(5)
     if not success:
         return "Error: Printer not found"
     
-    # Check and bind rfcomm if needed
-    if not check_and_bind_rfcomm(address):
-        return "Error: Failed to bind rfcomm device"
+    if not bind_rfcomm(address):
+        return "Error: Failed to bind rfcomm"
     
     tspl_commands = [
         "SIZE 50 mm, 30 mm\n",
@@ -84,39 +43,97 @@ def print_qr_code(qr_data, number_of_prints=1):
     ]
 
     try:
-        # Use Python file I/O to write to the rfcomm device
-        print("Sending commands to printer...")
         for i in range(number_of_prints):
             with open(PRINTER_DEVICE, 'w') as printer:
                 for command in tspl_commands:
                     printer.write(command)
-        print(f"✓ QR code and text sent to printer with data: {qr_data}")
         return "Success"
     except Exception as e:
-        print(f"Error: {e}")
         return f"Error: {e}"
 
-def print_qr_code_with_timeout(qr_data, number_of_prints=1, timeout=15):
-    """
-    Run print_qr_code with a timeout. If the timeout is reached, return an error message.
-    Args:
-        qr_data (str): The data to encode in the QR code
-        timeout (int): Timeout in seconds
-    Returns:
-        str: Success or error message
-    """
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        future = executor.submit(print_qr_code, qr_data, number_of_prints)
+class QRPrinter:
+    """Simple QR printer class with persistent connection"""
+    
+    def __init__(self):
+        self.connected = False
+    
+    def connect(self):
+        """Connect to printer"""
+        print(f"Connecting to printer")
+
+        success, address = scan_for_printer(5)
+        if not success:
+            return False
+        
+        if bind_rfcomm(address):
+            self.connected = True
+            return True
+        return False
+
+    def is_connected(self):
+        return self.connected
+    
+    def print_qr_code(self, qr_data, number_of_prints=1):
+        """Print QR code using existing connection"""
+        if not self.connected:
+            if not self.connect():
+                return "Error: Cannot find printer"
+        
+        tspl_commands = [
+            "SIZE 50 mm, 30 mm\n",
+            "GAP 2 mm, 0 mm\n",
+            "CLS\n",
+            f"QRCODE 50,50,L,5,A,0,M2,S3,\"{qr_data}\"\n",
+            "TEXT 180,75,\"3\",0,1,1,\"VTDC Tech\"\n",
+            f"TEXT 180,125,\"3\",0,1,1,\"{qr_data}\"\n",
+            "PRINT 1\n"
+        ]
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Printer write timeout")
+
         try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            return "Error: Print operation timed out"
+            # Set 5 second timeout for file operations
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(5)
+            
+            with open(PRINTER_DEVICE, 'w') as printer:
+                for i in range(number_of_prints):
+                    for command in tspl_commands:
+                        printer.write(command)
+                printer.flush()
+            
+            signal.alarm(0)  # Cancel timeout
+            return "Success"
+        except TimeoutError:
+            self.connected = False
+            return "Error: Printer disconnected or not responding"
+        except Exception as e:
+            self.connected = False
+            return f"Error: {e}"
+        finally:
+            signal.alarm(0)  # Ensure timeout is cancelled
+    
+    def disconnect(self):
+        """Disconnect from printer"""
+        try:
+            subprocess.run(['sudo', 'rfcomm', 'release', '0'])
+            self.connected = False
+        except:
+            pass
 
 def main():
-    """Main function to demonstrate usage"""
-    # Example usage
+    """Example usage"""
     qr_data = "E4B13797BACC"
+    
+    # Method 1: Simple function call
     print_qr_code(qr_data)
+    
+    # Method 2: Class with persistent connection
+    printer = QRPrinter()
+    printer.print_qr(qr_data)
+    printer.print_qr("ANOTHER_CODE", 2)
+    printer.disconnect()
 
 if __name__ == "__main__":
     main()

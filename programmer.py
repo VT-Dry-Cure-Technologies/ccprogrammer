@@ -16,7 +16,7 @@ from pathlib import Path
 
 # Import USB detection module
 from ccusb import USBDeviceDetector, scan_all_devices
-from print_qr import print_qr_code_with_timeout 
+from print_qr import QRPrinter
 
 # Import flash module
 from flash import ESP32Flasher
@@ -37,11 +37,11 @@ class FT232HMonitor:
         self.auto_check = auto_check
         self.folder_path = Path(__file__).parent / "firmware"
         
-        # Initialize USB detector, flasher, and serial recorder
+        # Initialize USB detector, flasher, serial recorder, and QR printer
         self.usb_detector = USBDeviceDetector()
         self.flasher = ESP32Flasher()
         self.serial_recorder = SerialRecorder(self.gui_callback)
-        
+        self.qr_printer = QRPrinter()
         # Configure root grid
         root.columnconfigure(0, weight=1)
         root.rowconfigure(1, weight=1)
@@ -360,10 +360,20 @@ class FT232HMonitor:
         address = self.address_label.cget("text").split(": ")[1]
         if address != "Not detected":
             self.show_snackbar(f"Printing QR code for device: {address}")
-            message = print_qr_code_with_timeout(address, number_of_prints)
+            print(f"Printer connected: {self.qr_printer.is_connected()}")
+            # Connect to printer if not already connected
+            if not self.qr_printer.is_connected():
+                if not self.qr_printer.connect():
+                    self.show_snackbar("Printer not found", "error")
+                    return
+            
+            # Print the QR code
+            message = self.qr_printer.print_qr_code(address, number_of_prints)
+            print(f"Print result: {message}")
             if message == "Success":
                 self.show_snackbar(message, "success")
             else:
+                print(f"Showing error snackbar: {message}")
                 self.show_snackbar(message, "error")
         else:
             self.show_snackbar("No address detected, cannot print QR code", "warning")
@@ -472,6 +482,9 @@ class FT232HMonitor:
     def on_closing(self):
         """Handle window closing"""
         self.running = False
+        # Disconnect from printer if connected
+        if self.qr_printer.is_connected:
+            self.qr_printer.disconnect()
         self.root.quit()
 
 def main():
