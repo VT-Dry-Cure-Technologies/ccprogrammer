@@ -411,9 +411,17 @@ class FT232HMonitor:
                     import asyncio
                     from bluetooth_scanner import scan_for_my_devices
                     try:
-                        found = asyncio.run(scan_for_my_devices(5, device_id))
-                        msg = "BT Device FOUND" if found else "BT Device NOT FOUND"
-                        msg_type = "success" if found else "error"
+                        found, rssi = asyncio.run(scan_for_my_devices(5, device_id))
+                        print(f"BT Test result: found={found}, rssi={rssi}")
+                        msg = "BT Device NOT FOUND"
+                        msg_type = "error"
+                        if found:
+                            if rssi >  -45:
+                                msg = "BT Device FOUND with good signal: " + str(rssi) + "dBm"
+                                msg_type = "success"
+                            else:
+                                msg = "BT Device FOUND with poor signal: " + str(rssi) + "dBm"
+                                msg_type = "warning"
                     except Exception as e:
                         msg = f"BT Test error: {e}"
                         msg_type = "error"

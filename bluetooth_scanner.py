@@ -89,16 +89,17 @@ def parse_manufacturer_data(manufacturer_data):
 
 async def scan_for_my_devices(timeout=5, deviceId=None):
     """
-    Scan for BLE devices advertising service data with UUID FFF1, return True if deviceId is found, else False after timeout.
+    Scan for BLE devices advertising service data with UUID FFF1, return (True, RSSI) if deviceId is found, else (False, None) after timeout.
     """
     TARGET_SERVICE_DATA_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
     print(f"Scanning for BLE devices advertising service data UUID {TARGET_SERVICE_DATA_UUID} and deviceId {deviceId}")
     found = False
+    rssi_value = None
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
 
     def detection_callback(device, adv):
-        nonlocal found
+        nonlocal found, rssi_value
         service_data = adv.service_data if hasattr(adv, 'service_data') else {}
         if TARGET_SERVICE_DATA_UUID not in service_data:
             return
@@ -111,8 +112,11 @@ async def scan_for_my_devices(timeout=5, deviceId=None):
         adv_device_id_clean = adv_device_id.replace(":", "").upper()
         target_device_id_clean = deviceId.replace(":", "").upper() if deviceId else None
         if adv_device_id_clean == target_device_id_clean:
-            print(f"Device found: Address={device.address}, DeviceId={adv_device_id}")
+            rssi = adv.rssi if hasattr(adv, 'rssi') else None
+            rssi_display = rssi if rssi is not None else 'N/A'
+            print(f"Device found: Address={device.address}, DeviceId={adv_device_id}, RSSI={rssi_display}dBm")
             found = True
+            rssi_value = rssi
             # Stop the scanner and set the event
             loop.create_task(scanner.stop())
             stop_event.set()
@@ -123,7 +127,7 @@ async def scan_for_my_devices(timeout=5, deviceId=None):
         await asyncio.wait_for(stop_event.wait(), timeout=timeout)
     except asyncio.TimeoutError:
         await scanner.stop()
-    return found
+    return (found, rssi_value)
 
 
 def scan_for_printer(timeout=5) -> Tuple[bool, Optional[str]]:
