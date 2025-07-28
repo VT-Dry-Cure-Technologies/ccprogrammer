@@ -35,7 +35,10 @@ class FT232HMonitor:
         
         # Store auto_check setting
         self.auto_check = auto_check
-        self.folder_path = Path(__file__).parent / "firmware"
+        # if folder does not exist, create it
+        self.folder_path = Path.home() / "firmwares" / "main"
+        if not self.folder_path.exists():
+            self.folder_path.mkdir(parents=True, exist_ok=True)
         
         # Initialize USB detector, flasher, serial recorder, and QR printer
         self.usb_detector = USBDeviceDetector()

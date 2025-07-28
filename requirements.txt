@@ -3,3 +3,4 @@ bleak
 pyserial 
 requests
 wmi
+supabase
