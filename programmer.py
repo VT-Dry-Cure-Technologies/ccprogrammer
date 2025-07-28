@@ -23,7 +23,7 @@ from flash import ESP32Flasher
 
 # Import serial module
 from ccserial import SerialRecorder
-from update import update_firmware, get_current_version
+from update import update_firmware, get_current_version_and_created_at
 
 class FT232HMonitor:
     def __init__(self, root, auto_check=True):
@@ -65,7 +65,9 @@ class FT232HMonitor:
         version_update_frame.grid(row=1, column=0, pady=(0, 0))
 
         # Add current version label (centered)
-        self.version_label = ttk.Label(version_update_frame, text=f"Current Version: {get_current_version(self.folder_path)}", font=('Arial', 12))
+        current_version, current_created_at = get_current_version_and_created_at(self.folder_path)
+        current_created_at = current_created_at.strftime("%Y-%m-%d %H:%M:%S")
+        self.version_label = ttk.Label(version_update_frame, text=f"Current Version: {current_version} ({current_created_at})", font=('Arial', 12))
         self.version_label.pack(side=tk.LEFT, padx=(0, 10))
 
         # Add folder picker button (centered)
@@ -474,7 +476,9 @@ class FT232HMonitor:
                 message = update_firmware(self.folder_path)
                 if message == "Success":
                     self.show_snackbar("Firmware update complete!", "success")
-                    self.version_label.config(text=f"Current Version: {get_current_version(self.folder_path)}")
+                    current_version, current_created_at = get_current_version_and_created_at(self.folder_path)
+                    current_created_at = current_created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    self.version_label.config(text=f"Current Version: {current_version} ({current_created_at})")
                 else:
                     self.show_snackbar(message, "error")
             except Exception as e:
@@ -486,7 +490,9 @@ class FT232HMonitor:
         folder_path = filedialog.askdirectory()
         if folder_path:
             self.folder_path = Path(folder_path) 
-            self.version_label.config(text=f"Current Version: {get_current_version(self.folder_path)}")
+            current_version, current_created_at = get_current_version_and_created_at(self.folder_path)
+            current_created_at = current_created_at.strftime("%Y-%m-%d %H:%M:%S")
+            self.version_label.config(text=f"Current Version: {current_version} ({current_created_at})")
             self.flasher.set_firmware_dir(folder_path)
             self.show_snackbar(f"Firmware directory set to: {folder_path}", "success")
 
