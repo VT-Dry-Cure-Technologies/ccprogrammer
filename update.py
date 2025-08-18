@@ -17,7 +17,7 @@ def fetch_firmware_info():
     supabase = create_supabase_client()
     
     # Query the firmwares table to get the latest row
-    response = supabase.table('firmwares').select('link, version, created_at').order('created_at', desc=False).limit(1).execute()
+    response = supabase.table('firmwares').select('link, version, created_at').order('created_at', desc=True).limit(1).execute()
     
     if not response.data:
         raise Exception("No firmware records found in database")
