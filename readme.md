@@ -1,5 +1,9 @@
 
-Clone repo into /home/coolcure2/cc2
+Download archive:
+curl https://edlquuxypulyedwgweai.supabase.co/storage/v1/object/public/programmer/v1.zip --output programmer.zip
+unzip programmer.zip
+cd ccprogrammer/
+
 
 On linux and mac create venve first
 python3 -m venv ~/ccprog_venv
@@ -14,7 +18,7 @@ Version=1.0
 Type=Application
 Name=CC2 Programmer
 Comment=FT232H Device Monitor and Programmer
-Exec=/home/coolcure2/ccprog_venv/bin/python /home/coolcure2/cc2/scripts/programmer.py
+Exec=/home/pi/ccprog_venv/bin/python /home/pi/ccprogrammer/programmer.py
 Icon=applications-system
 Terminal=false
 Categories=Utility;System;
@@ -26,12 +30,11 @@ After=network.target graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/coolcure2/ccprog_venv/bin/python /home/coolcure2/cc2/scripts/programmer.py
-WorkingDirectory=/home/coolcure2/cc2/scripts
-User=coolcure2
-Group=coolcure2
+ExecStart=/home/pi/ccprog_venv/bin/python /home/pi/ccprogrammer/programmer.py
+WorkingDirectory=/home/pi/ccprogrammer
+User=pi
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/coolcure2/.Xauthority
+Environment=XAUTHORITY=/home/pi/.Xauthority
 Restart=on-failure
 RestartSec=5
 
