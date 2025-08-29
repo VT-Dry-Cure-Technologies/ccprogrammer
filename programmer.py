@@ -424,7 +424,7 @@ class FT232HMonitor:
                         msg = "BT Device NOT FOUND"
                         msg_type = "error"
                         if found:
-                            if rssi >  -45:
+                            if rssi >  -69:
                                 msg = "BT Device FOUND with good signal: " + str(rssi) + "dBm"
                                 msg_type = "success"
                             else:
